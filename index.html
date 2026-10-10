@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PAC CAT - Retro 80s Arcade</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Press Start 2P', cursive;
+            overflow: hidden; /* Prevent scrolling on mobile */
+            touch-action: none; /* Disable double-tap zoom */
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0, 150, 255, 0.3);
+            border-radius: 8px;
+            overflow: hidden;
+            background: #000;
+            max-width: 100%;
+            display: flex;
+            justify-content: center;
+        }
+
+        canvas {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            image-rendering: pixelated; /* Crisp edges for classic feel */
+            object-fit: contain;
+        }
+
+        /* Scanline effect for extra 80s arcade vibe */
+        #game-container::after {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 10;
+            background-size: 100% 4px, 6px 100%;
+            pointer-events: none;
+        }
+
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            text-align: center;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .neon-text-blue {
+            text-shadow: 0 0 5px #00f, 0 0 10px #00f, 0 0 20px #00f;
+            color: #fff;
+        }
+        
+        .neon-text-pink {
+            text-shadow: 0 0 5px #f0f, 0 0 10px #f0f, 0 0 20px #f0f;
+            color: #fff;
+        }
+
+        .blink {
+            animation: blinker 1s linear infinite;
+        }
+
+        @keyframes blinker {
+            50% { opacity: 0; }
+        }
+
+        .hud-text {
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        @media (min-width: 640px) {
+            .hud-text { font-size: 16px; }
+        }
+
+        #joystick-base {
+            position: fixed;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(0, 150, 255, 0.5);
+            z-index: 100;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            display: none;
+            box-sizing: border-box;
+        }
+        #joystick-base.active {
+            display: block;
+        }
+        #joystick-knob {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(0, 150, 255, 0.6);
+            top: 50%;
+            left: 50%;
+            margin-top: -25px;
+            margin-left: -25px;
+            box-shadow: 0 0 15px rgba(0, 150, 255, 0.8);
+            border: 2px solid rgba(255, 255, 255, 0.7);
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body class="bg-black w-full h-full">
+
+    <div class="w-full max-w-lg p-2 md:p-4 flex flex-col items-center">
+        
+        <!-- HUD (Score and Lives) -->
+        <div class="w-full flex justify-between items-center mb-2 px-2 hud-text neon-text-blue">
+            <div>SCORE: <span id="score-display">0</span></div>
+            <div>LVL: <span id="level-display">1</span></div>
+            <div>LIVES: <span id="lives-display">❤️❤️❤️</span></div>
+        </div>
+
+        <!-- Game Canvas Container -->
+        <div id="game-container">
+            <canvas id="gameCanvas" width="456" height="552"></canvas>
+            
+            <!-- Start Screen Overlay -->
+            <div id="start-screen" class="overlay">
+                <h1 class="text-3xl md:text-4xl mb-6 neon-text-pink">PAC CAT</h1>
+                <div class="text-xs md:text-sm space-y-4 mb-8 text-left inline-block">
+                    <p><span style="color:#8B4513">■</span> Winston (Tracker)</p>
+                    <p><span style="color:#708090">■</span> Chevy (Ambusher)</p>
+                    <p><span style="color:#D2691E">■</span> Carter (Wildcard)</p>
+                    <p><span style="color:#FFFFFF">■</span> Mal (Wanderer)</p>
+                    <p class="mt-4 text-center">🐟 = 10pts &nbsp;&nbsp; 🧶 = Power</p>
+                </div>
+                <button id="start-btn" class="px-6 py-3 border-2 border-white text-white neon-text-blue hover:bg-white hover:text-black transition-colors blink cursor-pointer rounded-md">INSERT COIN</button>
+            </div>
+
+            <!-- Game Over Overlay -->
+            <div id="gameover-screen" class="overlay hidden">
+                <h2 class="text-3xl text-red-500 mb-4 blink">GAME OVER</h2>
+                <p class="mb-6 text-sm">FINAL SCORE: <span id="final-score">0</span></p>
+                <button id="restart-btn" class="px-4 py-2 border-2 border-white text-white hover:bg-white hover:text-black transition-colors rounded-md cursor-pointer">TRY AGAIN</button>
+            </div>
+        </div>
+
+        <p class="mt-4 text-[10px] text-gray-500 text-center w-full max-w-sm">Use Arrow Keys, WASD, or Touch & Drag to move.</p>
+    </div>
+
+    <div id="joystick-base">
+        <div id="joystick-knob"></div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Game Constants
+        const TILE_SIZE = 24;
+        const COLS = 19;
+        const ROWS = 23;
+        
+        // Directions
+        const NONE = 0;
+        const UP = 1;
+        const DOWN = 2;
+        const LEFT = 3;
+        const RIGHT = 4;
+
+        // Map elements
+        const EMPTY = 0;
+        const WALL = 1;
+        const FISH = 2;
+        const YARN = 3;
+        const DOOR = 4;
+
+        // 1=Wall, 2=Fish, 3=Yarn, 4=GhostDoor, 0=Empty
+        const INITIAL_MAP = [
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,1],
+            [1,3,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,3,1],
+            [1,2,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,2,1],
+            [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+            [1,2,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,2,1],
+            [1,2,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,2,1],
+            [1,1,1,1,2,1,1,1,0,1,0,1,1,1,2,1,1,1,1],
+            [0,0,0,1,2,1,0,0,0,0,0,0,0,1,2,1,0,0,0],
+            [1,1,1,1,2,1,0,1,1,4,1,1,0,1,2,1,1,1,1],
+            [0,0,0,0,2,0,0,1,0,0,0,1,0,0,2,0,0,0,0], // Tunnel Row 10
+            [1,1,1,1,2,1,0,1,1,1,1,1,0,1,2,1,1,1,1],
+            [0,0,0,1,2,1,0,0,0,0,0,0,0,1,2,1,0,0,0],
+            [1,1,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,1],
+            [1,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,1],
+            [1,2,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,2,1],
+            [1,3,2,1,2,2,2,2,2,0,2,2,2,2,2,1,2,3,1], // Spawn row (16)
+            [1,1,2,1,2,1,2,1,1,1,1,1,2,1,2,1,2,1,1],
+            [1,2,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,2,1],
+            [1,2,1,1,1,1,1,1,2,1,2,1,1,1,1,1,1,2,1],
+            [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+        ];
+
+        let map = [];
+        let totalDots = 0;
+        let eatenDots = 0;
+        let level = 1;
+        
+        const MAZE_COLORS = ['#2121DE', '#39FF14', '#FF00FF', '#FF8C00', '#00FFFF', '#FF2400'];
+        let currentMazeColor = MAZE_COLORS[0];
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playSound(type) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            const now = audioCtx.currentTime;
+            
+            if (type === 'chomp') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
+                gainNode.gain.setValueAtTime(0.1, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.start(now);
+                osc.stop(now + 0.1);
+            } else if (type === 'power') {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.linearRampToValueAtTime(800, now + 0.2);
+                gainNode.gain.setValueAtTime(0.1, now);
+                gainNode.gain.linearRampToValueAtTime(0.01, now + 0.3);
+                osc.start(now);
+                osc.stop(now + 0.3);
+            } else if (type === 'eatGhost') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(800, now);
+                osc.frequency.exponentialRampToValueAtTime(100, now + 0.4);
+                gainNode.gain.setValueAtTime(0.2, now);
+                gainNode.gain.linearRampToValueAtTime(0.01, now + 0.4);
+                osc.start(now);
+                osc.stop(now + 0.4);
+            } else if (type === 'die') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(200, now);
+                osc.frequency.exponentialRampToValueAtTime(50, now + 1);
+                gainNode.gain.setValueAtTime(0.3, now);
+                gainNode.gain.linearRampToValueAtTime(0.01, now + 1);
+                osc.start(now);
+                osc.stop(now + 1);
+            }
+        }
+
+        let gameState = 'START'; // START, PLAYING, GAMEOVER, WIN
+        let score = 0;
+        let lives = 3;
+        let animationId;
+        
+        let scaredTimer = 0;
+        const SCARED_DURATION = 600; // frames (~10s at 60fps)
+        let ghostMultiplier = 200;
+
+        let frames = 0; // For animations
+
+        // Entities
+        let cat;
+        let dogs = [];
+
+        function getCol(x) { return Math.floor(x / TILE_SIZE); }
+        function getRow(y) { return Math.floor(y / TILE_SIZE); }
+        function getCenter(x) { return Math.floor(x * TILE_SIZE + TILE_SIZE / 2); }
+        
+        function canMove(c, r, dir, isDog = false, dogState = 'normal') {
+            let nextC = c;
+            let nextR = r;
+            
+            if (dir === UP) nextR--;
+            else if (dir === DOWN) nextR++;
+            else if (dir === LEFT) nextC--;
+            else if (dir === RIGHT) nextC++;
+
+            // Tunnel logic
+            if (nextC < 0 || nextC >= COLS) return true;
+            if (nextR < 0 || nextR >= ROWS) return false; // Bounds check
+
+            let tile = map[nextR][nextC];
+            if (tile === WALL) return false;
+            
+            // Door Logic: Only eaten dogs entering or spawning dogs leaving can pass
+            if (tile === DOOR) {
+                if (!isDog) return false;
+                if (dogState === 'normal' || dogState === 'scared') return false; 
+            }
+            
+            return true;
+        }
+
+        class Cat {
+            constructor() {
+                this.resetPosition();
+                this.radius = 10;
+                this.mouthAngle = 0;
+                this.mouthDir = 1; // 1 opening, -1 closing
+            }
+
+            resetPosition() {
+                // Spawn in the middle, slightly lower
+                this.col = 9;
+                this.row = 16;
+                this.x = this.col * TILE_SIZE + TILE_SIZE / 2;
+                this.y = this.row * TILE_SIZE + TILE_SIZE / 2;
+                this.dir = NONE;
+                this.nextDir = NONE;
+                this.facing = RIGHT; // Track facing for side-profile orientation
+                this.speed = 2; // Must divide TILE_SIZE perfectly
+            }
+
+            update() {
+                if (this.dir !== NONE) {
+                    this.facing = this.dir;
+                }
+
+                if (this.dir === NONE && this.nextDir === NONE) return;
+
+                // Animate mouth
+                this.mouthAngle += 0.15 * this.mouthDir;
+                if (this.mouthAngle > 0.6 || this.mouthAngle < 0) {
+                    this.mouthAngle = Math.max(0, Math.min(0.6, this.mouthAngle));
+                    this.mouthDir *= -1;
+                }
+
+                // Check grid alignment (perfectly on a tile center)
+                const centerOffsetX = this.x - TILE_SIZE / 2;
+                const centerOffsetY = this.y - TILE_SIZE / 2;
+
+                if (centerOffsetX % TILE_SIZE === 0 && centerOffsetY % TILE_SIZE === 0) {
+                    let currentCol = getCol(this.x);
+                    let currentRow = getRow(this.y);
+
+                    // Tunnel wrap
+                    if (currentCol < 0) {
+                        this.x = (COLS - 1) * TILE_SIZE + TILE_SIZE / 2;
+                        currentCol = COLS - 1;
+                    } else if (currentCol >= COLS) {
+                        this.x = TILE_SIZE / 2;
+                        currentCol = 0;
+                    }
+
+                    // Attempt to turn
+                    if (this.nextDir !== NONE && canMove(currentCol, currentRow, this.nextDir, false)) {
+                        this.dir = this.nextDir;
+                        this.facing = this.dir;
+                    }
+
+                    // Check if current direction is blocked
+                    if (!canMove(currentCol, currentRow, this.dir, false)) {
+                        this.dir = NONE;
+                    }
+                }
+
+                // Move
+                if (this.dir === UP) this.y -= this.speed;
+                else if (this.dir === DOWN) this.y += this.speed;
+                else if (this.dir === LEFT) this.x -= this.speed;
+                else if (this.dir === RIGHT) this.x += this.speed;
+
+                this.checkCollisions();
+            }
+
+            checkCollisions() {
+                let c = getCol(this.x);
+                let r = getRow(this.y);
+
+                if (c >= 0 && c < COLS && map[r] && map[r][c] !== EMPTY && map[r][c] !== WALL && map[r][c] !== DOOR) {
+                    let tile = map[r][c];
+                    if (tile === FISH) {
+                        score += 10;
+                        eatenDots++;
+                        playSound('chomp');
+                    } else if (tile === YARN) {
+                        score += 50;
+                        eatenDots++;
+                        triggerScaredMode();
+                        playSound('power');
+                    }
+                    map[r][c] = EMPTY; // Clear the dot
+                    updateHUD();
+                    
+                    if (eatenDots >= totalDots) {
+                        levelComplete();
+                    }
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                // Orient based on facing direction (Side profile adjustments)
+                if (this.facing === LEFT) {
+                    ctx.scale(-1, 1); // Flip horizontally so feet still point down
+                } else if (this.facing === UP) {
+                    ctx.rotate(-Math.PI / 2); // Classic rotate for vertical movement
+                } else if (this.facing === DOWN) {
+                    ctx.rotate(Math.PI / 2); // Classic rotate for vertical movement
+                }
+                
+                let isMoving = this.dir !== NONE;
+                
+                // 1. Draw Tail (Back Left)
+                ctx.beginPath();
+                let wag = isMoving ? Math.sin(frames * 0.4) * 4 : Math.sin(frames * 0.1) * 1.5;
+                ctx.moveTo(-this.radius + 1, 0);
+                ctx.quadraticCurveTo(-this.radius - 8, -6 + wag, -this.radius - 13, -1 + wag);
+                ctx.strokeStyle = '#FF8C00'; // Darker orange tail
+                ctx.lineWidth = 2.5;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                // 2. Draw Back Leg (Darker orange for depth)
+                ctx.fillStyle = '#CC7000';
+                let legSwing = isMoving ? Math.sin(frames * 0.5) * 4 : 0;
+                ctx.beginPath();
+                ctx.roundRect(-4 + legSwing, this.radius - 3, 3, 6, 1.5);
+                ctx.fill();
+
+                // 3. Draw Front Leg
+                ctx.fillStyle = '#FF8C00';
+                ctx.beginPath();
+                ctx.roundRect(1 - legSwing, this.radius - 3, 3, 6, 1.5);
+                ctx.fill();
+
+                // 4. Draw Pac-Cat body (Side Profile)
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, this.mouthAngle, 2 * Math.PI - this.mouthAngle);
+                ctx.lineTo(0, 0);
+                ctx.fillStyle = '#FFD700'; // Gold/Yellow
+                ctx.fill();
+
+                // 5. Draw Ears (Top)
+                ctx.fillStyle = '#FF8C00'; 
+                // Back Ear (Slightly darker for depth)
+                ctx.fillStyle = '#CC7000';
+                ctx.beginPath();
+                ctx.moveTo(-4, -this.radius + 2);
+                ctx.lineTo(-7, -this.radius - 5);
+                ctx.lineTo(-1, -this.radius + 1);
+                ctx.fill();
+                // Front Ear
+                ctx.fillStyle = '#FF8C00';
+                ctx.beginPath();
+                ctx.moveTo(1, -this.radius + 1);
+                ctx.lineTo(4, -this.radius - 6);
+                ctx.lineTo(7, -this.radius + 2);
+                ctx.fill();
+
+                // 6. Draw Whiskers (Front)
+                ctx.strokeStyle = '#FFF';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(3, -2); ctx.lineTo(10, -5);
+                ctx.moveTo(4, 0);  ctx.lineTo(11, 0);
+                ctx.moveTo(3, 2);  ctx.lineTo(10, 5);
+                ctx.stroke();
+
+                // 7. Draw Eye (Single eye for side profile)
+                ctx.fillStyle = '#111';
+                ctx.beginPath();
+                ctx.arc(1, -this.radius / 2.5, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        class Dog {
+            constructor(name, color, type, spawnC, spawnR) {
+                this.name = name;
+                this.color = color;
+                this.type = type; // 'tracker', 'ambusher', 'wildcard', 'wanderer'
+                this.spawnC = spawnC;
+                this.spawnR = spawnR;
+                this.resetPosition();
+                this.radius = 11;
+            }
+
+            resetPosition() {
+                this.x = this.spawnC * TILE_SIZE + TILE_SIZE / 2;
+                this.y = this.spawnR * TILE_SIZE + TILE_SIZE / 2;
+                this.dir = UP;
+                this.speed = 2; // Normal speed
+                this.state = 'leaving_house'; // Force them to leave at spawn
+            }
+
+            update() {
+                // Adjust speed based on state
+                let currentSpeed = this.speed;
+                if (this.state === 'scared') currentSpeed = 1; // Slower when scared
+                if (this.state === 'eaten') currentSpeed = 4; // Fast return to base
+
+                const centerOffsetX = this.x - TILE_SIZE / 2;
+                const centerOffsetY = this.y - TILE_SIZE / 2;
+
+                // Only make decisions exactly at the center of tiles
+                if (centerOffsetX % TILE_SIZE === 0 && centerOffsetY % TILE_SIZE === 0) {
+                    let c = getCol(this.x);
+                    let r = getRow(this.y);
+
+                    // Tunnel wrap
+                    if (c < 0) { this.x = (COLS - 1) * TILE_SIZE + TILE_SIZE / 2; c = COLS - 1; }
+                    else if (c >= COLS) { this.x = TILE_SIZE / 2; c = 0; }
+                    
+                    // Safety bounds check to prevent array out-of-bounds crashes
+                    if (r < 0) r = 0;
+                    if (r >= ROWS) r = ROWS - 1;
+
+                    // Eaten behavior: Return to ghost house (Door is at 9, 9)
+                    if (this.state === 'eaten') {
+                        if (c === 9 && r === 9) {
+                            this.dir = DOWN; // enter the house
+                        } else if (c === 9 && r === 10) {
+                            this.state = 'leaving_house';
+                            this.dir = UP;
+                        } else {
+                            this.dir = this.calculateBestDirection(c, r, 9, 9);
+                        }
+                    } 
+                    else if (this.state === 'leaving_house') {
+                        if (c === 9 && r === 8) {
+                            // Successfully outside the house, switch to normal movement
+                            this.state = 'normal';
+                            this.dir = Math.random() > 0.5 ? LEFT : RIGHT;
+                        } else if (c === 9 && r === 9) {
+                            this.dir = UP;    // Move up out of the door
+                        } else if (c < 9) {
+                            this.dir = RIGHT; // Move towards the door center
+                        } else if (c > 9) {
+                            this.dir = LEFT;  // Move towards the door center
+                        } else {
+                            this.dir = UP;    // Move up towards the door
+                        }
+                    }
+                    else if (this.state === 'scared') {
+                        // Pick a valid random direction (excluding reverse unless trapped)
+                        let available = this.getAvailableDirections(c, r);
+                        if (available.length > 0) {
+                            this.dir = available[Math.floor(Math.random() * available.length)];
+                        }
+                    } 
+                    else {
+                        // Normal AI Tracking
+                        let targetC = getCol(cat.x);
+                        let targetR = getRow(cat.y);
+
+                        if (this.type === 'ambusher') { // Chevy (Pinky-like)
+                            if (cat.dir === UP) targetR -= 4;
+                            else if (cat.dir === DOWN) targetR += 4;
+                            else if (cat.dir === LEFT) targetC -= 4;
+                            else if (cat.dir === RIGHT) targetC += 4;
+                        } else if (this.type === 'wanderer') { // Rex (Clyde-like)
+                            let dist = Math.hypot(c - targetC, r - targetR);
+                            if (dist < 8) {
+                                // Wander to bottom left corner
+                                targetC = 1; targetR = ROWS - 2;
+                            }
+                        }
+                        // Wildcard (Buster) moves somewhat randomly at intersections
+                        if (this.type === 'wildcard' && Math.random() < 0.2) {
+                            let available = this.getAvailableDirections(c, r);
+                            if (available.length > 0) this.dir = available[Math.floor(Math.random() * available.length)];
+                        } else {
+                            this.dir = this.calculateBestDirection(c, r, targetC, targetR);
+                        }
+                    }
+                }
+
+                // Apply movement
+                if (this.dir === UP) this.y -= currentSpeed;
+                else if (this.dir === DOWN) this.y += currentSpeed;
+                else if (this.dir === LEFT) this.x -= currentSpeed;
+                else if (this.dir === RIGHT) this.x += currentSpeed;
+            }
+
+            getAvailableDirections(c, r) {
+                let available = [];
+                // Check all 4 dirs, but prevent immediate 180 reversal unless it's the only way
+                let reverseDir = this.getReverseDir(this.dir);
+                
+                if (this.dir !== reverseDir && canMove(c, r, UP, true, this.state) && reverseDir !== UP) available.push(UP);
+                if (this.dir !== reverseDir && canMove(c, r, DOWN, true, this.state) && reverseDir !== DOWN) available.push(DOWN);
+                if (this.dir !== reverseDir && canMove(c, r, LEFT, true, this.state) && reverseDir !== LEFT) available.push(LEFT);
+                if (this.dir !== reverseDir && canMove(c, r, RIGHT, true, this.state) && reverseDir !== RIGHT) available.push(RIGHT);
+                
+                // If dead end, allow reverse
+                if (available.length === 0 && canMove(c, r, reverseDir, true, this.state)) available.push(reverseDir);
+                
+                return available;
+            }
+
+            calculateBestDirection(c, r, targetC, targetR) {
+                let available = this.getAvailableDirections(c, r);
+                if (available.length === 0) return this.dir;
+
+                let bestDir = available[0];
+                let minDistance = Infinity;
+
+                for (let d of available) {
+                    let testC = c;
+                    let testR = r;
+                    if (d === UP) testR--;
+                    else if (d === DOWN) testR++;
+                    else if (d === LEFT) testC--;
+                    else if (d === RIGHT) testC++;
+
+                    let dist = Math.hypot(testC - targetC, testR - targetR);
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        bestDir = d;
+                    }
+                }
+                return bestDir;
+            }
+
+            getReverseDir(d) {
+                if (d === UP) return DOWN;
+                if (d === DOWN) return UP;
+                if (d === LEFT) return RIGHT;
+                if (d === RIGHT) return LEFT;
+                return NONE;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+
+                let drawColor = this.color;
+                if (this.state === 'scared') {
+                    // Flash white near end of scared timer
+                    drawColor = (scaredTimer < 120 && Math.floor(frames / 15) % 2 === 0) ? '#FFFFFF' : '#0000FF';
+                }
+
+                if (this.state !== 'eaten') {
+                    // Dog Head Base (Upper half)
+                    ctx.fillStyle = drawColor;
+                    ctx.beginPath();
+                    ctx.arc(0, -2, this.radius - 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Dog Lower Face / Cheeks
+                    ctx.beginPath();
+                    ctx.ellipse(0, 3, this.radius, this.radius - 4, 0, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Floppy Dog Ears
+                    ctx.fillStyle = (this.state === 'scared') ? drawColor : darkenColor(this.color, 40);
+                    // Left ear
+                    ctx.beginPath();
+                    ctx.ellipse(-this.radius + 1, 2, 3, 7, Math.PI / 8, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Right ear
+                    ctx.beginPath();
+                    ctx.ellipse(this.radius - 1, 2, 3, 7, -Math.PI / 8, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Snout patch
+                    if (this.state !== 'scared') {
+                        ctx.fillStyle = '#EEEEEE';
+                        ctx.beginPath();
+                        ctx.ellipse(0, 5, 5, 3, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                    // Nose
+                    ctx.fillStyle = (this.state === 'scared') ? '#FFA500' : '#111';
+                    ctx.beginPath();
+                    ctx.arc(0, 3, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Eyes & Mouth Layer
+                if (this.state === 'scared') {
+                    ctx.fillStyle = '#FFA500'; // Scared eyes color
+                    ctx.beginPath(); ctx.arc(-4, -2, 2, 0, 2*Math.PI); ctx.fill();
+                    ctx.beginPath(); ctx.arc(4, -2, 2, 0, 2*Math.PI); ctx.fill();
+                    
+                    // Wobbly mouth
+                    ctx.strokeStyle = '#FFA500';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(-5, 6); ctx.lineTo(-2, 4); ctx.lineTo(0, 6); ctx.lineTo(2, 4); ctx.lineTo(5, 6);
+                    ctx.stroke();
+                } else if (this.state === 'eaten') {
+                    // Just floating eyes returning to base
+                    ctx.fillStyle = '#FFF';
+                    ctx.beginPath(); ctx.arc(-4, -2, 3, 0, 2*Math.PI); ctx.fill();
+                    ctx.beginPath(); ctx.arc(4, -2, 3, 0, 2*Math.PI); ctx.fill();
+                    
+                    ctx.fillStyle = '#00F';
+                    let px = 0, py = 0;
+                    if (this.dir === UP) py = -2;
+                    else if (this.dir === DOWN) py = 2;
+                    else if (this.dir === LEFT) px = -2;
+                    else if (this.dir === RIGHT) px = 2;
+                    
+                    ctx.beginPath(); ctx.arc(-4 + px, -2 + py, 1.5, 0, 2*Math.PI); ctx.fill();
+                    ctx.beginPath(); ctx.arc(4 + px, -2 + py, 1.5, 0, 2*Math.PI); ctx.fill();
+                } else {
+                    // Normal Eyes
+                    ctx.fillStyle = '#FFF';
+                    ctx.beginPath(); ctx.arc(-4, -3, 3, 0, 2*Math.PI); ctx.fill();
+                    ctx.beginPath(); ctx.arc(4, -3, 3, 0, 2*Math.PI); ctx.fill();
+                    
+                    // Pupils (look in direction of movement)
+                    ctx.fillStyle = '#111'; 
+                    let px = 0, py = 0;
+                    if (this.dir === UP) py = -1;
+                    else if (this.dir === DOWN) py = 1;
+                    else if (this.dir === LEFT) px = -1;
+                    else if (this.dir === RIGHT) px = 1;
+                    
+                    ctx.beginPath(); ctx.arc(-4 + px, -3 + py, 1.5, 0, 2*Math.PI); ctx.fill();
+                    ctx.beginPath(); ctx.arc(4 + px, -3 + py, 1.5, 0, 2*Math.PI); ctx.fill();
+                }
+                ctx.restore();
+            }
+        }
+
+        // Helper to darken dog ears slightly
+        function darkenColor(color, percent) {
+            let num = parseInt(color.replace("#",""),16),
+            amt = Math.round(2.55 * percent),
+            R = (num >> 16) - amt,
+            G = (num >> 8 & 0x00FF) - amt,
+            B = (num & 0x0000FF) - amt;
+            return "#" + (0x1000000 + (R<255?R<1?0:R:255)*0x10000 + (G<255?G<1?0:G:255)*0x100 + (B<255?B<1?0:B:255)).toString(16).slice(1);
+        }
+
+        function triggerScaredMode() {
+            scaredTimer = SCARED_DURATION;
+            ghostMultiplier = 200;
+            dogs.forEach(dog => {
+                if (dog.state !== 'eaten') {
+                    dog.state = 'scared';
+                    // Immediately reverse direction
+                    dog.dir = dog.getReverseDir(dog.dir);
+                }
+            });
+        }
+
+        function handleEntityCollisions() {
+            dogs.forEach(dog => {
+                let dist = Math.hypot(cat.x - dog.x, cat.y - dog.y);
+                if (dist < 15) { // Collision radius
+                    if (dog.state === 'scared') {
+                        // Eat Dog
+                        playSound('eatGhost');
+                        score += ghostMultiplier;
+                        ghostMultiplier *= 2;
+                        dog.state = 'eaten';
+                        
+                        // SNAP to grid center to prevent fractional speed bounds crash
+                        dog.x = getCol(dog.x) * TILE_SIZE + TILE_SIZE / 2;
+                        dog.y = getRow(dog.y) * TILE_SIZE + TILE_SIZE / 2;
+                        
+                        updateHUD();
+                    } else if (dog.state === 'normal') {
+                        // Cat dies
+                        handleDeath();
+                    }
+                }
+            });
+        }
+
+        function handleDeath() {
+            playSound('die');
+            lives--;
+            updateHUD();
+            if (lives <= 0) {
+                gameState = 'GAMEOVER';
+                document.getElementById('final-score').innerText = score;
+                document.getElementById('gameover-screen').classList.remove('hidden');
+            } else {
+                // Reset positions
+                cat.resetPosition();
+                dogs.forEach(dog => dog.resetPosition());
+                scaredTimer = 0;
+            }
+        }
+
+        function levelComplete() {
+            level++;
+            initLevel();
+        }
+
+        function updateHUD() {
+            document.getElementById('score-display').innerText = score;
+            document.getElementById('level-display').innerText = level;
+            let livesText = '';
+            for(let i=0; i<lives; i++) livesText += '❤️❤️';
+            document.getElementById('lives-display').innerText = livesText || 'DEAD';
+        }
+
+        function drawMap() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Walls
+            ctx.strokeStyle = currentMazeColor;
+            ctx.lineWidth = 2;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = currentMazeColor;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    let tile = map[r][c];
+                    let x = c * TILE_SIZE;
+                    let y = r * TILE_SIZE;
+
+                    if (tile === WALL) {
+                        ctx.beginPath();
+                        ctx.roundRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4, 4);
+                        ctx.stroke();
+                    } else if (tile === DOOR) {
+                        ctx.strokeStyle = '#FFC0CB'; // Pink door
+                        ctx.shadowColor = '#FFC0CB';
+                        ctx.beginPath();
+                        ctx.moveTo(x, y + TILE_SIZE / 2);
+                        ctx.lineTo(x + TILE_SIZE, y + TILE_SIZE / 2);
+                        ctx.stroke();
+                        ctx.strokeStyle = currentMazeColor; // Reset
+                        ctx.shadowColor = currentMazeColor;
+                    }
+                }
+            }
+            ctx.shadowBlur = 0; // Reset shadow for entities
+
+            // Draw Dots
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = '12px Arial'; // Emojis render better in standard fonts
+            
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    let tile = map[r][c];
+                    let cx = c * TILE_SIZE + TILE_SIZE / 2;
+                    let cy = r * TILE_SIZE + TILE_SIZE / 2;
+
+                    if (tile === FISH) {
+                        ctx.fillText('🐟', cx, cy);
+                    } else if (tile === YARN) {
+                        ctx.font = '18px Arial';
+                        // Add pulsing effect for yarn
+                        if (Math.floor(frames / 15) % 2 === 0) {
+                            ctx.shadowBlur = 10;
+                            ctx.shadowColor = '#FF69B4';
+                        }
+                        ctx.fillText('🧶', cx, cy);
+                        ctx.shadowBlur = 0;
+                        ctx.font = '12px Arial'; // reset
+                    }
+                }
+            }
+        }
+
+        function initLevel() {
+            map = INITIAL_MAP.map(row => [...row]);
+            totalDots = 0;
+            eatenDots = 0;
+            
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (map[r][c] === FISH || map[r][c] === YARN) totalDots++;
+                }
+            }
+
+            cat.resetPosition();
+            dogs.forEach(dog => dog.resetPosition());
+            scaredTimer = 0;
+            
+            currentMazeColor = MAZE_COLORS[(level - 1) % MAZE_COLORS.length];
+            updateHUD();
+        }
+
+        function initGame() {
+            level = 1;
+            score = 0;
+            lives = 3;
+
+            cat = new Cat();
+            dogs = [
+                new Dog('Winston', '#8B4513', 'tracker', 9, 10),  
+                new Dog('Chevy', '#708090', 'ambusher', 8, 10),   
+                new Dog('Carter', '#D2691E', 'wildcard', 10, 10), 
+                new Dog('Mal', '#FFFFFF', 'wanderer', 9, 10)      
+            ];
+            
+            initLevel();
+            gameState = 'PLAYING';
+            frames = 0;
+
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('gameover-screen').classList.add('hidden');
+
+            if (animationId) cancelAnimationFrame(animationId);
+            gameLoop();
+            
+            // Start audio context if suspended
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function gameLoop() {
+            if (gameState !== 'PLAYING') return;
+
+            frames++;
+            
+            // Handle Scared Timer
+            if (scaredTimer > 0) {
+                scaredTimer--;
+                if (scaredTimer === 0) {
+                    dogs.forEach(dog => {
+                        if (dog.state === 'scared') dog.state = 'normal';
+                    });
+                }
+            }
+
+            cat.update();
+            dogs.forEach(dog => dog.update());
+            handleEntityCollisions();
+
+            drawMap();
+            cat.draw();
+            dogs.forEach(dog => dog.draw());
+
+            animationId = requestAnimationFrame(gameLoop);
+        }
+
+        window.addEventListener('keydown', (e) => {
+            // Prevent default scrolling for arrow keys
+            if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) {
+                e.preventDefault();
+            }
+            
+            if (gameState !== 'PLAYING') return;
+            
+            if (e.key === 'ArrowUp' || e.key === 'w') cat.nextDir = UP;
+            if (e.key === 'ArrowDown' || e.key === 's') cat.nextDir = DOWN;
+            if (e.key === 'ArrowLeft' || e.key === 'a') cat.nextDir = LEFT;
+            if (e.key === 'ArrowRight' || e.key === 'd') cat.nextDir = RIGHT;
+        });
+
+        const joystickBase = document.getElementById('joystick-base');
+        const joystickKnob = document.getElementById('joystick-knob');
+        let joyStartX = 0;
+        let joyStartY = 0;
+        let isDragging = false;
+        const MAX_JOY_DIST = 35; // Maximum pixel distance the knob can move from center
+
+        window.addEventListener('touchstart', (e) => {
+            // Ignore if not playing or clicking a button
+            if (gameState !== 'PLAYING' || e.target.tagName === 'BUTTON') return;
+            
+            const touch = e.changedTouches[0];
+            joyStartX = touch.clientX;
+            joyStartY = touch.clientY;
+            isDragging = true;
+            
+            // Show joystick at touch location
+            joystickBase.style.left = `${joyStartX}px`;
+            joystickBase.style.top = `${joyStartY}px`;
+            joystickBase.classList.add('active');
+            joystickKnob.style.transform = `translate(0px, 0px)`;
+            
+            e.preventDefault(); // Prevent zoom/scroll
+        }, {passive: false});
+
+        window.addEventListener('touchmove', (e) => {
+            if (!isDragging || gameState !== 'PLAYING') return;
+            
+            const touch = e.changedTouches[0];
+            let dx = touch.clientX - joyStartX;
+            let dy = touch.clientY - joyStartY;
+            let dist = Math.hypot(dx, dy);
+            
+            // Constrain knob visually within base
+            let knobX = dx;
+            let knobY = dy;
+            
+            if (dist > MAX_JOY_DIST) {
+                let angle = Math.atan2(dy, dx);
+                knobX = Math.cos(angle) * MAX_JOY_DIST;
+                knobY = Math.sin(angle) * MAX_JOY_DIST;
+            }
+            
+            joystickKnob.style.transform = `translate(${knobX}px, ${knobY}px)`;
+            
+            // Determine input direction based on drag vector (with a small deadzone)
+            if (dist > 10) {
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    cat.nextDir = dx > 0 ? RIGHT : LEFT;
+                } else {
+                    cat.nextDir = dy > 0 ? DOWN : UP;
+                }
+            }
+            
+            e.preventDefault();
+        }, {passive: false});
+
+        const endJoystick = (e) => {
+            isDragging = false;
+            joystickBase.classList.remove('active');
+        };
+
+        window.addEventListener('touchend', endJoystick);
+        window.addEventListener('touchcancel', endJoystick);
+
+        document.getElementById('start-btn').addEventListener('click', initGame);
+        document.getElementById('restart-btn').addEventListener('click', initGame);
+
+        // Initial render to show map behind start screen
+        map = INITIAL_MAP.map(row => [...row]);
+        drawMap();
+
+    </script>
+</body>
+</html>
