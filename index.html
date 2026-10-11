@@ -160,6 +160,14 @@
                     <p><span style="color:#FFFFFF">■</span> Mal (Wanderer)</p>
                     <p class="mt-4 text-center">🐟 = 10pts &nbsp;&nbsp; 🧶 = Power</p>
                 </div>
+                
+                <!-- DIFFICULTY SELECTOR -->
+                <div class="mb-8 flex gap-4 text-sm justify-center">
+                    <label class="cursor-pointer hover:text-pink-400 transition-colors"><input type="radio" name="difficulty" value="2" class="hidden peer" /><span class="peer-checked:neon-text-blue peer-checked:border-b-2">EASY</span></label>
+                    <label class="cursor-pointer hover:text-pink-400 transition-colors"><input type="radio" name="difficulty" value="3" class="hidden peer" /><span class="peer-checked:neon-text-blue peer-checked:border-b-2">NORMAL</span></label>
+                    <label class="cursor-pointer hover:text-pink-400 transition-colors"><input type="radio" name="difficulty" value="4" class="hidden peer" checked /><span class="peer-checked:neon-text-blue peer-checked:border-b-2">HARD</span></label>
+                </div>
+
                 <button id="start-btn" class="px-6 py-3 border-2 border-white text-white neon-text-blue hover:bg-white hover:text-black transition-colors blink cursor-pointer rounded-md">INSERT COIN</button>
             </div>
 
@@ -232,6 +240,7 @@
         let totalDots = 0;
         let eatenDots = 0;
         let level = 1;
+        let gameSpeed = 3; // Controlled by difficulty selector
         
         const MAZE_COLORS = ['#2121DE', '#39FF14', '#FF00FF', '#FF8C00', '#00FFFF', '#FF2400'];
         let currentMazeColor = MAZE_COLORS[0];
@@ -274,21 +283,23 @@
                 osc.stop(now + 0.4);
             } else if (type === 'die') {
                 osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(200, now);
-                osc.frequency.exponentialRampToValueAtTime(50, now + 1);
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.exponentialRampToValueAtTime(30, now + 1.5); // Retro descending sweep
                 gainNode.gain.setValueAtTime(0.3, now);
-                gainNode.gain.linearRampToValueAtTime(0.01, now + 1);
+                gainNode.gain.linearRampToValueAtTime(0.01, now + 1.5);
                 osc.start(now);
-                osc.stop(now + 1);
+                osc.stop(now + 1.5);
             }
         }
 
-        let gameState = 'START'; // START, PLAYING, GAMEOVER, WIN
+        let gameState = 'START'; // START, PLAYING, DYING, LEVEL_TRANSITION, GAMEOVER
         let score = 0;
         let lives = 3;
         let animationId;
         
         let scaredTimer = 0;
+        let deathTimer = 0;
+        let transitionTimer = 0;
         const SCARED_DURATION = 600; // frames (~10s at 60fps)
         let ghostMultiplier = 200;
 
@@ -330,13 +341,13 @@
         class Cat {
             constructor() {
                 this.resetPosition();
-                this.radius = 10;
                 this.mouthAngle = 0;
                 this.mouthDir = 1; // 1 opening, -1 closing
             }
 
             resetPosition() {
                 // Spawn in the middle, slightly lower
+                this.radius = 10;
                 this.col = 9;
                 this.row = 16;
                 this.x = this.col * TILE_SIZE + TILE_SIZE / 2;
@@ -344,7 +355,7 @@
                 this.dir = NONE;
                 this.nextDir = NONE;
                 this.facing = RIGHT; // Track facing for side-profile orientation
-                this.speed = 2; // Must divide TILE_SIZE perfectly
+                this.speed = gameSpeed; 
             }
 
             update() {
@@ -520,15 +531,23 @@
                 this.x = this.spawnC * TILE_SIZE + TILE_SIZE / 2;
                 this.y = this.spawnR * TILE_SIZE + TILE_SIZE / 2;
                 this.dir = UP;
-                this.speed = 2; // Normal speed
+                this.speed = gameSpeed; 
                 this.state = 'leaving_house'; // Force them to leave at spawn
             }
 
             update() {
                 // Adjust speed based on state
                 let currentSpeed = this.speed;
-                if (this.state === 'scared') currentSpeed = 1; // Slower when scared
-                if (this.state === 'eaten') currentSpeed = 4; // Fast return to base
+                if (this.state === 'scared') currentSpeed = this.speed / 2; 
+                if (this.state === 'eaten') currentSpeed = 6; // Fast return to base
+
+                const exitY = 8 * TILE_SIZE + TILE_SIZE / 2;
+                if (this.state === 'leaving_house' && this.dir === UP && this.y <= exitY) {
+                    this.y = exitY;
+                    this.x = 9 * TILE_SIZE + TILE_SIZE / 2; // Snap perfectly to column 9 center
+                    this.state = 'normal';
+                    this.dir = Math.random() > 0.5 ? LEFT : RIGHT;
+                }
 
                 const centerOffsetX = this.x - TILE_SIZE / 2;
                 const centerOffsetY = this.y - TILE_SIZE / 2;
@@ -558,11 +577,7 @@
                         }
                     } 
                     else if (this.state === 'leaving_house') {
-                        if (c === 9 && r === 8) {
-                            // Successfully outside the house, switch to normal movement
-                            this.state = 'normal';
-                            this.dir = Math.random() > 0.5 ? LEFT : RIGHT;
-                        } else if (c === 9 && r === 9) {
+                        if (c === 9 && r === 9) {
                             this.dir = UP;    // Move up out of the door
                         } else if (c < 9) {
                             this.dir = RIGHT; // Move towards the door center
@@ -780,6 +795,7 @@
         }
 
         function handleEntityCollisions() {
+            if (gameState !== 'PLAYING') return;
             dogs.forEach(dog => {
                 let dist = Math.hypot(cat.x - dog.x, cat.y - dog.y);
                 if (dist < 15) { // Collision radius
@@ -804,31 +820,23 @@
         }
 
         function handleDeath() {
+            if (gameState === 'DYING') return;
             playSound('die');
-            lives--;
-            updateHUD();
-            if (lives <= 0) {
-                gameState = 'GAMEOVER';
-                document.getElementById('final-score').innerText = score;
-                document.getElementById('gameover-screen').classList.remove('hidden');
-            } else {
-                // Reset positions
-                cat.resetPosition();
-                dogs.forEach(dog => dog.resetPosition());
-                scaredTimer = 0;
-            }
+            gameState = 'DYING';
+            deathTimer = 120; // ~2 seconds of death animation
         }
 
         function levelComplete() {
-            level++;
-            initLevel();
+            if (gameState === 'LEVEL_TRANSITION') return;
+            gameState = 'LEVEL_TRANSITION';
+            transitionTimer = 180; // ~3 seconds of flashing maze
         }
 
         function updateHUD() {
             document.getElementById('score-display').innerText = score;
             document.getElementById('level-display').innerText = level;
             let livesText = '';
-            for(let i=0; i<lives; i++) livesText += '❤️❤️';
+            for(let i=0; i<lives; i++) livesText += '❤️';
             document.getElementById('lives-display').innerText = livesText || 'DEAD';
         }
 
@@ -916,6 +924,10 @@
         }
 
         function initGame() {
+            // Get selected difficulty
+            const diffInput = document.querySelector('input[name="difficulty"]:checked');
+            gameSpeed = diffInput ? parseFloat(diffInput.value) : 3;
+
             level = 1;
             score = 0;
             lives = 3;
@@ -943,6 +955,56 @@
         }
 
         function gameLoop() {
+            if (gameState === 'DYING') {
+                deathTimer--;
+                
+                // Spin and shrink animation
+                cat.mouthAngle += 0.3;
+                cat.radius = Math.max(0, cat.radius - 0.1);
+                
+                drawMap();
+                cat.draw();
+                
+                if (deathTimer <= 0) {
+                    lives--;
+                    updateHUD();
+                    if (lives <= 0) {
+                        gameState = 'GAMEOVER';
+                        document.getElementById('final-score').innerText = score;
+                        document.getElementById('gameover-screen').classList.remove('hidden');
+                    } else {
+                        gameState = 'PLAYING';
+                        cat.resetPosition();
+                        dogs.forEach(dog => dog.resetPosition());
+                        scaredTimer = 0;
+                    }
+                }
+                animationId = requestAnimationFrame(gameLoop);
+                return;
+            }
+
+            if (gameState === 'LEVEL_TRANSITION') {
+                transitionTimer--;
+                
+                // Classic 80s rapid flash effect
+                if (Math.floor(transitionTimer / 6) % 2 === 0) {
+                    currentMazeColor = '#FFFFFF';
+                } else {
+                    currentMazeColor = MAZE_COLORS[(level - 1) % MAZE_COLORS.length];
+                }
+                
+                drawMap();
+                cat.draw();
+                
+                if (transitionTimer <= 0) {
+                    level++;
+                    initLevel();
+                    gameState = 'PLAYING';
+                }
+                animationId = requestAnimationFrame(gameLoop);
+                return;
+            }
+
             if (gameState !== 'PLAYING') return;
 
             frames++;
