@@ -287,9 +287,11 @@
         let totalDots = 0;
         let eatenDots = 0;
         let level = 1;
-        let gameSpeed = 2; // Default starting speed
+        let gameSpeed = 1.5; // Default starting speed adjusted for new array
         
-        const SAFE_SPEEDS = [1, 1.5, 2, 3, 4]; // Speeds that evenly divide 24px tile size
+        // 1.2 and 2.4 cause floating point rounding errors in Javascript that break 
+        // modulo-based grid alignment, so we must use clean binary fractions and integers.
+        const SAFE_SPEEDS = [0.75, 1, 1.5, 2, 3]; 
         const MAZE_COLORS = ['#2121DE', '#39FF14', '#FF00FF', '#FF8C00', '#00FFFF', '#FF2400'];
         let currentMazeColor = MAZE_COLORS[0];
 
